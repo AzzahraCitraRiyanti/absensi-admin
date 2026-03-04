@@ -8,6 +8,15 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Models\User;
+use App\Models\PasswordOtp;
+use App\Mail\SendOtpMail;
+use Illuminate\Support\Facades\Mail;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+use Mailtrap\MailtrapClient;
+use Mailtrap\Mime\MailtrapEmail;
+use Symfony\Component\Mime\Address;
+use Illuminate\Support\Facades\DB;
 
 class AuthController extends Controller
 {
@@ -69,6 +78,110 @@ class AuthController extends Controller
         $request->user()->tokens()->delete();
 
         return response()->json(['message' => 'Logout berhasil']);
+    }
+
+    
+
+
+
+
+
+    public function requestOtp(Request $request)
+    {
+        try {
+    
+            $request->validate([
+                'email' => 'required|email|exists:users,email'
+            ]);
+    
+            $email = $request->email;
+    
+            $otp = random_int(100000, 999999);
+    
+            PasswordOtp::where('email', $email)->delete();
+    
+            PasswordOtp::create([
+                'email' => $email,
+                'otp' => Hash::make($otp),
+                'expired_at' => Carbon::now()->addMinutes(5)
+            ]);
+    
+            Mail::raw("Kode OTP Anda adalah: $otp", function ($message) use ($email) {
+                $message->to($email)
+                        ->subject('Kode OTP Reset Password')
+                        ->from(
+                            config('mail.from.address'),
+                            config('mail.from.name')
+                        );
+            });
+    
+            return response()->json([
+                'message' => 'OTP berhasil dikirim'
+            ], 200);
+    
+        } catch (\Throwable $e) {
+    
+            Log::error($e->getMessage());
+    
+            return response()->json([
+                'message' => 'Gagal mengirim OTP'
+            ], 500);
+        }
+    }
+
+    public function verifyOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required'
+        ]);
+
+        $record = PasswordOtp::where('email', $request->email)->first();
+
+        if (!$record) {
+            return response()->json(['message' => 'OTP tidak ditemukan'], 400);
+        }
+
+        if (Carbon::now()->gt($record->expired_at)) {
+            return response()->json(['message' => 'OTP sudah expired'], 400);
+        }
+
+        if (!Hash::check($request->otp, $record->otp)) {
+            return response()->json(['message' => 'OTP salah'], 400);
+        }
+
+        return response()->json([
+            'message' => 'OTP valid'
+        ]);
+    }
+
+    public function resetPasswordWithOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required',
+            'password' => 'required|confirmed'
+        ]);
+
+        $record = PasswordOtp::where('email', $request->email)->first();
+
+        if (!$record ||
+            Carbon::now()->gt($record->expired_at) ||
+            !Hash::check($request->otp, $record->otp)
+        ) {
+            return response()->json(['message' => 'OTP tidak valid'], 400);
+        }
+
+        $user = User::where('email', $request->email)->first();
+        $user->password = $request->password; // auto hashed via cast
+        $user->save();
+
+        // Hapus OTP setelah dipakai
+        $record->delete();
+
+        return response()->json([
+            'message' => 'Password berhasil diubah'
+        ]);
     }
 
     /**

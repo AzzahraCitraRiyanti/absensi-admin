@@ -7,12 +7,16 @@ use App\Http\Controllers\Api\KehadiranController;
 use App\Http\Controllers\Api\WajahController;
 
 
+
 // =======================
 // PUBLIC ROUTES
 // =======================
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
+Route::post('/request-otp', [AuthController::class, 'requestOtp']);
+Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+Route::post('/reset-password', [AuthController::class, 'resetPasswordWithOtp']);
 
 // =======================
 // PROTECTED ROUTES
@@ -42,4 +46,5 @@ Route::middleware('auth:sanctum')->group(function () {
     // =======================
     Route::post('/wajah', [WajahController::class, 'store']);
     Route::get('/wajah/check', [WajahController::class, 'check']);
+
 });
